@@ -1,16 +1,22 @@
 import React from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
-import Page from "./pages/User/Page";
+import Home from "./pages/Home/Home";
 import Todo from "./pages/Todo/Todo";
+import { QueryClientProvider, QueryClient } from "@tanstack/react-query"
 
 function App() {
+  const client = new QueryClient()
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Page />} />
-        <Route path="/todo" element={<Todo />} />
-      </Routes>
-    </BrowserRouter>
+    <div className = "App">
+      <QueryClientProvider client = {client}>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/todo" element={<Todo />} />
+          </Routes>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </div>
   );
 }
 

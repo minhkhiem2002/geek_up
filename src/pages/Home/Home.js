@@ -1,14 +1,14 @@
 import Header from "../../components/Header/Header";
 import React, { useEffect } from "react";
-import "./Page.scss";
-const Page = () => {
+import "./Home.scss";
+const Home = () => {
   useEffect(() => {
     document.title = "Test";
   }, []);
   return (
-    <div className="page">
+    <div className="home">
       <Header />
     </div>
   );
 };
-export default Page;
+export default Home;

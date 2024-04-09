@@ -1,71 +1,54 @@
-import "./Content.scss";
-import React from "react";
-import InfiniteScroll from "react-infinite-scroll-component";
-import { Divider, Select, List, Button, Spin } from "antd";
-import { useState, useEffect } from "react";
-import { MinusSquareOutlined, CheckCircleOutlined } from "@ant-design/icons";
-import axios from "axios";
+import React, { useState, useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Divider, Select, List, Button, Spin } from 'antd';
+import { MinusSquareOutlined, CheckCircleOutlined } from '@ant-design/icons';
+import axios from 'axios'
+import './Content.scss'
 const Content = () => {
-  const [user, setUser] = useState([]);
+  const queryClient = useQueryClient();
   const [select, setSelect] = useState();
   const [spin, setSpin] = useState();
-  const getAllUser = async () => {
-    const apiUrl = "https://jsonplaceholder.typicode.com/users";
-    try {
-      const response = await axios.get(apiUrl);
-      if (response) {
-        setUser(response.data);
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
-  useEffect(() => {
-    const fetchData = async () => {
-      await getAllUser();
-    };
-
-    fetchData();
-  }, []);
-  const options = user.map((user) => ({
-    value: user.id,
-    label: user.name
-  }));
-  const onChange = (value) => {
-    setSpin(true);
-    setTimeout(() => {
-      setSelect(value);
-      setSpin(false);
-    }, 100);
-  };
-  const onSearch = (searchText) => {
-    console.log("Search:", searchText);
-  };
-  const filterOption = (input, option) =>
-    (option?.label ?? "").toLowerCase().includes(input.toLowerCase());
-  const [loading, setLoading] = useState(false);
-  const [data, setData] = useState([]);
-  const loadMoreData = async () => {
-    if (loading) {
-      return;
-    }
-    setLoading(true);
-    const apiUrl = `https://jsonplaceholder.typicode.com/users/${select}/todos`;
-    try {
-      const response = await axios.get(apiUrl);
-      if (response) {
-        setData(response.data);
-        setLoading(false);
-        calculateTask(response.data);
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
-  useEffect(() => {
-    loadMoreData();
-  }, [select]);
+  const [tasks, setTasks] = useState([]);
   const [loadings, setLoadings] = useState({});
+  const [completed, setCompleted] = useState(0);
+  const [total, setTotal] = useState(0);
+  const getAllUser = async () => {
+    const apiUrl = 'https://jsonplaceholder.typicode.com/users';
+    try {
+      const response = await axios.get(apiUrl);
+      if (response) {
+        return response.data;
+      }
+    } catch (error) {
+      console.error(error);
+      throw new Error('Error fetching users from API');
+    }
+  };
+  
+  const loadMoreData = async (key,selectValue) => {
+    const apiUrl = `https://jsonplaceholder.typicode.com/users/${key}/todos`;
+    try {
+      const cachedData = queryClient.getQueryData(['todos', key]);
+      if (cachedData) {
+        setTasks(cachedData);
+        calculateTask(cachedData);
+        return cachedData;
+      } else {
+        const response = await axios.get(apiUrl);
+        if (response) {
+          setTasks(response.data);
+          calculateTask(response.data);
+          queryClient.setQueryData(['todos', key], response.data);
+          return response.data;
+        }
+      }
+    } catch (error) {
+      console.error(error);
+      throw new Error('Error fetching tasks from API');
+    }
+  };
+  
+  
   const markTaskAsDone = async (taskId) => {
     try {
       await axios.patch(
@@ -74,36 +57,66 @@ const Content = () => {
       );
       console.log(`Task with id ${taskId} marked as done.`);
       setCompleted((prev) => prev + 1);
+      const prevTasks = queryClient.getQueryData(['todos', select]);
+      if (prevTasks) {
+        const updatedTasks = prevTasks.map((task) =>
+          task.id === taskId ? { ...task, completed: true } : task
+        );
+        queryClient.setQueryData(['todos', select], updatedTasks);
+      }
     } catch (error) {
       console.error(`Error marking task with id ${taskId} as done:`, error);
+      throw new Error('Error marking task as done');
     }
   };
-  const enterLoading = (index) => {
-    setLoadings((prevLoadings) => ({
-      ...prevLoadings,
-      [index]: true
-    }));
-    markTaskAsDone(index);
+  const { data: user, isLoading: userLoading } = useQuery({queryKey: ['users'], queryFn: getAllUser});
+  const { data: todo, isLoading, isError } = useQuery({queryKey: ['todos', select], queryFn: () => loadMoreData(select), 
+    enabled: !!select,
+    keepPreviousData: true
+  });
+  const options = user?.map(user => ({
+    value: user.id,
+    label: user.name
+  })) || [];
 
-    setTimeout(() => {
+  const onChange = value => {
+    setSpin(true);
+    setSelect(value);
+      setSpin(false);
+  };
+  const onSearch = (searchText) => {
+    console.log("Search:", searchText);
+  };
+  const filterOption = (input, option) =>
+    (option?.label ?? '').toLowerCase().includes(input.toLowerCase());
+
+    const enterLoading = async (taskId) => {
       setLoadings((prevLoadings) => ({
         ...prevLoadings,
-        [index]: false
+        [taskId]: true
       }));
-      setData((prevData) =>
-        prevData.map((item) =>
-          item.id === index ? { ...item, completed: true } : item
-        )
-      );
-    }, 800);
-  };
-  const [completed, setCompleted] = useState(0);
-  const [total, setTotal] = useState(0);
-  const calculateTask = (tasks) => {
-    const completedTasks = tasks.filter((task) => task.completed);
-    setCompleted(completedTasks.length);
-    setTotal(tasks.length);
-  };
+    
+      try {
+        await markTaskAsDone(taskId);
+        setLoadings((prevLoadings) => ({
+          ...prevLoadings,
+          [taskId]: false
+        }));
+        setTasks((prevTasks) =>
+          prevTasks.map((item) =>
+            item.id === taskId ? { ...item, completed: true } : item
+          )
+        );
+      } catch (error) {
+        console.error('Error marking task as done:', error);
+      }
+    };
+    const calculateTask = (tasks) => {
+      const completedTasks = tasks.filter((task) => task.completed);
+      setCompleted(completedTasks.length);
+      setTotal(tasks.length);
+    };
+
   return (
     <div className="content">
       <div className="body-content">
@@ -113,15 +126,14 @@ const Content = () => {
           </Divider>
           <Select
             showSearch
-            style={{
-              width: 200
-            }}
+            style={{ width: 200 }}
             placeholder="Select user"
             optionFilterProp="children"
             onChange={onChange}
             onSearch={onSearch}
             filterOption={filterOption}
             options={options}
+            loading={userLoading}
           />
         </div>
         <div className="content-table">
@@ -131,34 +143,20 @@ const Content = () => {
           <List
             bordered
             id="scrollableDiv"
-            style={{
-              height: 510,
-              overflow: "auto"
-            }}
+            style={{ height: 510, overflow: 'auto' }}
           >
             {select && (
               <>
                 {spin ? (
-                  <>
-                    <Spin style={{ marginTop: "17px" }} />
-                  </>
+                  <Spin style={{ marginTop: '17px' }} />
                 ) : (
-                  <>
-                    <InfiniteScroll
-                      dataLength={data.length}
-                      scrollableTarget="scrollableDiv"
-                    >
-                      <List
-                        dataSource={data.sort((a, b) => {
-                          if (a.completed === false && b.completed === true)
-                            return -1;
-                          if (a.completed === true && b.completed === false)
-                            return 1;
-                          return 0;
-                        })}
-                        renderItem={(item) => (
-                          <List.Item key={item.id}>
-                            {item.completed === false ? (
+                  
+                  <List
+                    dataSource={tasks?.sort((a, b) => a.completed === b.completed ? 0 : a.completed ? 1 : -1) || []}
+                    loading={isLoading}
+                    renderItem={item => (
+                      <List.Item key={item.id}>
+                        {item.completed === false ? (
                               <>
                                 <span className="title">
                                   <MinusSquareOutlined
@@ -192,23 +190,20 @@ const Content = () => {
                                 </span>
                               </>
                             )}
-                          </List.Item>
-                        )}
-                      />
-                    </InfiniteScroll>
-                  </>
+                      </List.Item>
+                    )}
+                  />
                 )}
               </>
             )}
           </List>
           <div className="countTask">
-            <span>
-              Done {completed}/{total} tasks
-            </span>
+            <span>Done {completed}/{total} tasks</span>
           </div>
         </div>
       </div>
     </div>
   );
 };
+
 export default Content;
